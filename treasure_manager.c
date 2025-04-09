@@ -30,7 +30,7 @@ void add_treasure(const char *hunt_id) {
   printf("Username: \n"); scanf("%s", t.username);
   printf("Latitude: \n"); scanf("%f", &t.coordonates.latitude);
   printf("Longitude: \n"); scanf("%f", &t.coordonates.longitude);
-  printf("Clue: \n:");
+  printf("Clue: \n");
   getchar();
   fgets(t.clue, CLUE_LEN, stdin);
   printf("Value: \n"); scanf("%d", &t.value);
@@ -41,7 +41,8 @@ void add_treasure(const char *hunt_id) {
     exit(1);
   }
   close(fd);
-  log_operation(hunt_id , t.treasureID);
+  
+  log_operation(hunt_id , "added");
   printf("Treasure added successfully.\n");
 }
 
@@ -171,7 +172,6 @@ void remove_hunt(const char *hunt_id) {
     perror("rmdir");
     exit(1);
   }
-
   printf("Hunt %s was completely removed.\n", hunt_id);
 }
 

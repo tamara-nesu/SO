@@ -2,7 +2,7 @@
 #define TREASURE_UTILS_H
 
 #define TREASURE_FILE "treasures.dat"
-#define LOG_FILE "logged_hunt"
+#define LOG_FILE "logged_hunt.txt"
 #define SYMLINK_PREFIX "logged-hunt-"
 #define TMP_FILE "tmp_treasures.dat"
 
