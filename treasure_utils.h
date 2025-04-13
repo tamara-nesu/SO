@@ -38,5 +38,5 @@ void build_symlink_name(char *link_name, const char *hunt_id);
 void build_tmp_file_path(char *dest , const char *hunt_id);
 int get_option_code(const char *op);
 void log_operation(const char *hunt_id , const char *operation);
-
+void display_menu();
 #endif

@@ -30,7 +30,6 @@ void build_treasure_file_path(char *path, const char *hunt_id) {
 }
 
 void build_log_file_path(char *path, const char *hunt_id) {
-  build_treasure_file_path(path , hunt_id);
   strcpy(path, hunt_id);
   strcat(path , "/");
   strcat(path, LOG_FILE);
@@ -71,7 +70,7 @@ void log_operation(const char *hunt_id, const char *operation) {
     return;
   }
 
-  dprintf(log_fd, "Operatie %s: %s\n", operation, hunt_id);
+  dprintf(log_fd, "%s: %s\n", operation, hunt_id);
   close(log_fd);
   printf("[DEBUG] Log updated: %s: %s\n", operation, hunt_id);
 
@@ -92,3 +91,12 @@ void log_operation(const char *hunt_id, const char *operation) {
     printf("[DEBUG] Symlink created: %s -> %s\n", link_name, log_path);
   }
 }
+
+void display_menu(){
+    printf("Available options:\n");
+    printf( "--add <hunt_id>: Add a new treasure\n");
+    printf( "--list <hunt_id>: List all treasures\n");
+    printf("--view <hunt_id> <treasure_id>: View a specific treasure\n");
+    printf( "--remove_treasure <hunt_id> <treasure_id>: Remove a treasure\n");
+    printf("--remove_hunt <hunt_id>: Remove the entire hunt\n");
+ }

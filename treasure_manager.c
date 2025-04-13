@@ -8,12 +8,7 @@
 #include "treasure_utils.h"
 #include <sys/stat.h>
 
-#define TREASURE_ID_LEN 32
-#define USERNAME_LEN 32
-#define CLUE_LEN 128
 
-
-// --add
 void add_treasure(const char *hunt_id) {
   create_hunt_directory(hunt_id);
   char path[256];
@@ -41,12 +36,11 @@ void add_treasure(const char *hunt_id) {
     exit(1);
   }
   close(fd);
-  
-  log_operation(hunt_id , "added");
+  log_operation(hunt_id , t.treasureID);
   printf("Treasure added successfully.\n");
 }
 
-// --list
+
 void list_treasures(const char *hunt_id) {
   char path[256];
   build_treasure_file_path(path, hunt_id);
@@ -59,7 +53,11 @@ void list_treasures(const char *hunt_id) {
 
   printf("Hunt name: %s\n", hunt_id);
   printf("Total file size: %ld bytes\n", st.st_size);
-  printf("Last modification: %ld\n", st.st_mtime);
+
+  char time_str[64];
+  struct tm *timeinfo = localtime(&st.st_mtime);
+  strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", timeinfo);
+  printf("Last modification: %s\n", time_str);
 
   int file = open(path, O_RDONLY);
   if (file == -1) {
@@ -77,7 +75,7 @@ void list_treasures(const char *hunt_id) {
   close(file);
 }
 
-// --view
+
 void view_treasure(const char *hunt_id, const char *id) {
   char path[256];
   build_treasure_file_path(path, hunt_id);
@@ -97,7 +95,7 @@ void view_treasure(const char *hunt_id, const char *id) {
       printf("Username: %s \n", t.username);
       printf("Coordinates: (%.2f , %.2f)\n",
              t.coordonates.latitude, t.coordonates.longitude);
-      printf("Clue: %s", t.clue);
+      printf("Clue: %s\n", t.clue);
       printf("Value: %d\n", t.value);
       found = 1;
       break;
@@ -111,7 +109,7 @@ void view_treasure(const char *hunt_id, const char *id) {
   close(file);
 }
 
-// --remove_treasure
+
 void remove_treasure(const char *hunt_id, const char *id) {
   char path[256], tmp_path[256];
   build_treasure_file_path(path, hunt_id);
@@ -156,30 +154,35 @@ void remove_treasure(const char *hunt_id, const char *id) {
   }
 }
 
-// --remove_hunt
+
 void remove_hunt(const char *hunt_id) {
   char path[256];
   build_treasure_file_path(path, hunt_id);
-  unlink(path); // delete treasure.dat
+  unlink(path); 
 
   build_log_file_path(path, hunt_id);
-  unlink(path); // delete logged_hunt
+  unlink(path); 
 
   build_symlink_name(path, hunt_id);
-  unlink(path); // delete symlink
+  unlink(path); 
 
   if (rmdir(hunt_id) == -1) {
     perror("rmdir");
     exit(1);
   }
+
   printf("Hunt %s was completely removed.\n", hunt_id);
 }
 
+
 int main(int argc, char **argv) {
-  if (argc < 3) {
+
+ if (argc < 3) {
     fprintf(stderr, "Usage: %s --add <hunt_id>\n", argv[0]);
+    display_menu();
     return 1;
   }
+
 
   const char *op = argv[1];
   const char *hunt_id = argv[2];
@@ -195,28 +198,28 @@ int main(int argc, char **argv) {
 }
   int opt = get_option_code(op);
   switch (opt) {
-    case 1: // add
+    case 1:
       create_hunt_directory(hunt_id);
       add_treasure(hunt_id);
       break;
-    case 2: // list
+    case 2: 
       list_treasures(hunt_id);
       break;
-    case 3: // view
+    case 3:
       if (!treasure_id) {
         fprintf(stderr, "Treasure ID not specified\n");
         return 1;
       }
       view_treasure(hunt_id, treasure_id);
       break;
-    case 4: // remove_treasure
+    case 4:
       if (!treasure_id) {
         fprintf(stderr, "Treasure ID not specified\n");
         return 1;
       }
       remove_treasure(hunt_id, treasure_id);
       break;
-    case 5: // remove_hunt
+    case 5:
       remove_hunt(hunt_id);
       break;
     default:
