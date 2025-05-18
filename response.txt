@@ -1,0 +1,3 @@
+Treasures in hunt 'hunt1':
+ID: silver1 | User: tamara | Lat: 356.00 | Lon: 236.00 | Value: 1
+ID: gold4 | User: sara | Lat: 435.00 | Lon: 67.00 | Value: 23

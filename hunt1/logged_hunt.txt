@@ -1,0 +1,2 @@
+silver1: hunt1
+gold4: hunt1

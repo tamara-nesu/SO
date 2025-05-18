@@ -1,0 +1,22 @@
+void list_treasures(const char *hunt_id, FILE *out) {
+    if (!hunt_id) {
+        fprintf(out, "Missing hunt ID\n");
+        return;
+    }
+
+    char path[256];
+    snprintf(path, sizeof(path), "%s/treasures.dat", hunt_id);
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) {
+        fprintf(out, "Cannot open treasures.dat for hunt '%s'\n", hunt_id);
+        return;
+    }
+
+    Treasure t;
+    fprintf(out, "Treasures in hunt '%s':\n", hunt_id);
+    while (read(fd, &t, sizeof(Treasure)) == sizeof(Treasure)) {
+        fprintf(out, "ID: %s | User: %s | Lat: %.2f | Lon: %.2f | Value: %d\n",
+                t.id, t.username, t.latitude, t.longitude, t.value);
+    }
+    close(fd);
+}
