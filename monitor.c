@@ -1,142 +1,122 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
 #include <signal.h>
-#include <errno.h>
-#include <sys/wait.h>
+#include <unistd.h>
 #include <fcntl.h>
 #include <dirent.h>
 #include <sys/stat.h>
 
-#define MAX_LINE 256
-#define MAX_PATH 256
-#define MAX_TREASURES 100
+volatile sig_atomic_t command_flag = 0;
+volatile sig_atomic_t stop_flag = 0;
+pid_t last_sender_pid = 0;
 
-volatile sig_atomic_t stop_request = 0;
-volatile sig_atomic_t command_request = 0;
 
-void signal_handler(int sig, siginfo_t *info, void *context) {
-    if (sig == SIGUSR1) {
-        command_request = 1;
-        printf("[monitor] Received command signal from PID %d.\n", info->si_pid);
-        sleep(1);
-    } else if (sig == SIGUSR2) {
-        printf("[monitor] Shutdown request received from PID %d.\n", info->si_pid);
-        stop_request = 1;
-        sleep(2);
-    }
-}
-
-void setup_signal_handlers() {
-    struct sigaction sa;
-    sigemptyset(&sa.sa_mask);
-    sigaddset(&sa.sa_mask, SIGUSR1);
-    sigaddset(&sa.sa_mask, SIGUSR2);
-    sa.sa_sigaction = signal_handler;
-    sa.sa_flags = SA_SIGINFO | SA_RESTART;
-
-    if (sigaction(SIGUSR1, &sa, NULL) == -1) {
-        perror("sigaction SIGUSR1");
-        exit(EXIT_FAILURE);
-    }
-
-    if (sigaction(SIGUSR2, &sa, NULL) == -1) {
-        perror("sigaction SIGUSR2");
-        exit(EXIT_FAILURE);
-    }
-}
-
-typedef enum {
-    CMD_START_MONITOR,
-    CMD_STOP_MONITOR,
-    CMD_LIST_HUNTS,
-    CMD_LIST_TREASURES,
-    CMD_VIEW_TREASURE,
-    CMD_EXIT,
-    CMD_UNKNOWN
-} CommandType;
-
-CommandType get_command_type(const char *cmd) {
-    if (strcmp(cmd, "start_monitor") == 0) return CMD_START_MONITOR;
-    if (strcmp(cmd, "stop_monitor") == 0) return CMD_STOP_MONITOR;
-    if (strcmp(cmd, "list_hunts") == 0) return CMD_LIST_HUNTS;
-    if (strcmp(cmd, "list_treasures") == 0) return CMD_LIST_TREASURES;
-    if (strcmp(cmd, "view_treasure") == 0) return CMD_VIEW_TREASURE;
-    if (strcmp(cmd, "exit") == 0) return CMD_EXIT;
-    return CMD_UNKNOWN;
-}
-
-void list_hunts() {
-    DIR *dir = opendir(".");  
-    if (!dir) {
-        perror("Error opening directory");
-        return;
-    }
-
-    struct dirent *entry;
-    while ((entry = readdir(dir)) != NULL) {
-        if (entry->d_type == DT_DIR && entry->d_name[0] != '.') {
-            char path[512];
-            snprintf(path, sizeof(path), "%s/treasures.dat", entry->d_name);
-
-            FILE *file = fopen(path, "r");
-            if (file) {
-                printf("Hunt %s: treasures.dat file found.\n", entry->d_name);
-                fclose(file);
-            } else {
-                printf("Hunt %s: treasures.dat file not found.\n", entry->d_name);
-            }
-        }
-    }
-
-    closedir(dir);
-}
+typedef struct{
+  float longitude;
+  float latitude;
+}GPS;
 
 typedef struct {
     char id[32];
     char username[32];
-    float latitude;
-    float longitude;
+  GPS coordonates;
     char clue[128];
     int value;
 } Treasure;
 
-void list_treasures(const char *hunt_id) {
+
+void handle_sigusr1(int sig, siginfo_t *info, void *context) {
+  if(sig == SIGUSR1){
+    command_flag = 1;
+    if(info!= NULL){
+      last_sender_pid = info->si_pid;
+      printf("Received SIGUSR1 from process with PID: %d\n", info->si_pid);
+    }else{
+      last_sender_pid = -1;
+      printf("Received SIGUSR1, but sender PID is unavailable (info is NULL)\n");
+    }
+  }else{
+    printf("Unexpected signal received in SIGUSR1 handler: %d\n", sig);
+  }
+}
+
+void handle_sigusr2(int sig) {
+  if(sig == SIGUSR2){
+    stop_flag = 1;
+  }
+}
+
+void setup_signals() {
+    struct sigaction sa1, sa2;
+    sa1.sa_sigaction = handle_sigusr1;
+    sigemptyset(&sa1.sa_mask);
+    sa1.sa_flags = SA_SIGINFO;
+    sigaction(SIGUSR1, &sa1, NULL);
+
+    sa2.sa_handler = handle_sigusr2;
+    sigemptyset(&sa2.sa_mask);
+    sa2.sa_flags = 0;
+    sigaction(SIGUSR2, &sa2, NULL);
+}
+
+void list_hunts(FILE *out) {
+    DIR *d = opendir(".");
+    if (!d) {
+        fprintf(out, "Error opening current directory\n");
+        return;
+    }
+    struct dirent *entry;
+    while ((entry = readdir(d)) != NULL) {
+        if (entry->d_type == DT_DIR && entry->d_name[0] != '.') {
+            char path[256];
+            snprintf(path, sizeof(path), "%s/treasures.dat", entry->d_name);
+            if (access(path, F_OK) == 0) {
+                fprintf(out, "Hunt '%s' has treasures.dat file\n", entry->d_name);
+            } else {
+                fprintf(out, "Hunt '%s' missing treasures.dat file\n", entry->d_name);
+            }
+        }
+    }
+    closedir(d);
+}
+
+void list_treasures(const char *hunt_id, FILE *out) {
     if (!hunt_id) {
-        printf("Missing hunt ID.\n");
+        fprintf(out, "Missing hunt ID\n");
         return;
     }
 
-    char path[MAX_PATH];
+    char path[256];
     snprintf(path, sizeof(path), "%s/treasures.dat", hunt_id);
     int fd = open(path, O_RDONLY);
     if (fd < 0) {
-        perror("Unable to open treasures file");
+        fprintf(out, "Cannot open treasures.dat for hunt '%s'\n", hunt_id);
         return;
     }
 
     Treasure t;
-    printf("Treasures in hunt '%s':\n", hunt_id);
+    fprintf(out, "Treasures in hunt '%s':\n", hunt_id);
     while (read(fd, &t, sizeof(Treasure)) == sizeof(Treasure)) {
-        printf("ID: %s | User: %s | (%.2f, %.2f) | Value: %d\n",
-               t.id, t.username, t.latitude, t.longitude, t.value);
+        fprintf(out, "ID: %s | User: %s | Lat: %.2f | Lon: %.2f | Value: %d\n",
+                t.id, t.username, t.coordonates.latitude, t.coordonates.longitude, t.value);
     }
-
     close(fd);
 }
 
-void view_treasure(const char *hunt_id, const char *treasure_id) {
+
+void view_treasure(const char *hunt_id, const char *treasure_id, FILE *out) {
     if (!hunt_id || !treasure_id) {
-        printf("Missing parameters for view_treasure command.\n");
+        fprintf(out, "Missing hunt ID or treasure ID\n");
         return;
     }
 
-    char path[MAX_PATH];
+    char path[256];
     snprintf(path, sizeof(path), "%s/treasures.dat", hunt_id);
     int fd = open(path, O_RDONLY);
     if (fd < 0) {
-        perror("Unable to open treasures file");
+        fprintf(out, "Cannot open treasures.dat for hunt '%s'\n", hunt_id);
         return;
     }
 
@@ -144,71 +124,92 @@ void view_treasure(const char *hunt_id, const char *treasure_id) {
     int found = 0;
     while (read(fd, &t, sizeof(Treasure)) == sizeof(Treasure)) {
         if (strcmp(t.id, treasure_id) == 0) {
-            printf("=== Treasure Details ===\n");
-            printf("ID: %s\nUser: %s\nLat: %.2f\nLon: %.2f\nClue: %s\nValue: %d\n",
-                   t.id, t.username, t.latitude, t.longitude, t.clue, t.value);
+            fprintf(out, "=== Treasure Details ===\n");
+            fprintf(out, "ID: %s\nUser: %s\nLat: %.2f\nLon: %.2f\nClue: %s\nValue: %d\n",
+                    t.id, t.username, t.coordonates.latitude, t.coordonates.longitude, t.clue, t.value);
             found = 1;
             break;
         }
     }
-
     if (!found) {
-        printf("Treasure with ID '%s' not found.\n", treasure_id);
+        fprintf(out, "Treasure ID '%s' not found in hunt '%s'\n", treasure_id, hunt_id);
     }
-
     close(fd);
 }
 
-void process_command() {
-    int fd = open("command.txt", O_RDONLY);
-    if (fd < 0) {
-        perror("Error opening command.txt");
-        return;
-    }
 
-    char buffer[256];
-    ssize_t bytes = read(fd, buffer, sizeof(buffer) - 1);
-    close(fd);
 
-    if (bytes <= 0) return;
+void process_command(const char *cmdline) {
+    char cmd_copy[512];
+    strncpy(cmd_copy, cmdline, sizeof(cmd_copy));
+    cmd_copy[sizeof(cmd_copy)-1] = '\0';
 
-    buffer[bytes] = '\0';
-    buffer[strcspn(buffer, "\n")] = '\0';
-
-    char *cmd_str = strtok(buffer, " ");
+    char *cmd = strtok(cmd_copy, " ");
     char *arg1 = strtok(NULL, " ");
     char *arg2 = strtok(NULL, " ");
 
-    CommandType cmd = get_command_type(cmd_str);
-
-    switch (cmd) {
-        case CMD_LIST_HUNTS:
-            list_hunts();
-            break;
-        case CMD_LIST_TREASURES:
-            list_treasures(arg1);
-            break;
-        case CMD_VIEW_TREASURE:
-            view_treasure(arg1, arg2);
-            break;
-        default:
-            printf("Unknown command: %s\n", cmd_str);
+    FILE *fout = fopen("response.txt", "w");
+    if (!fout) {
+        perror("fopen response.txt");
+        return;
     }
+
+    if (!cmd) {
+        fprintf(fout, "Empty command\n");
+        fclose(fout);
+        return;
+    }
+
+    if (strcmp(cmd, "list_hunts") == 0) {
+        list_hunts(fout);
+    } else if (strcmp(cmd, "list_treasures") == 0) {
+        list_treasures(arg1, fout);
+    } else if (strcmp(cmd, "view_treasure") == 0) {
+        view_treasure(arg1, arg2, fout);
+    } else {
+        fprintf(fout, "Unknown command: %s\n", cmd);
+    }
+
+    fclose(fout);
 }
 
 int main() {
-    setup_signal_handlers();
-    printf("[monitor] Waiting for signals...\n");
+    setup_signals();
+    printf("[monitor] PID %d waiting for commands...\n", getpid());
 
-    while (!stop_request) {
-        if (command_request) {
-            printf("[monitor] Processing command...\n");
-            process_command();
-            command_request = 0;
+    while (!stop_flag) {
+        if (command_flag) {
+            int fd = open("command.txt", O_RDONLY);
+            if (fd < 0) {
+                perror("open command.txt");
+                command_flag = 0;
+                continue;
+            }
+
+            char cmdline[512] = {0};
+            ssize_t bytes_read = read(fd, cmdline, sizeof(cmdline) - 1);
+            close(fd);
+
+            if (bytes_read <= 0) {
+                command_flag = 0;
+                continue;
+            }
+
+            
+            cmdline[strcspn(cmdline, "\n")] = 0;
+
+            printf("[monitor] Processing command: %s\n", cmdline);
+            process_command(cmdline);
+
+            if (last_sender_pid > 0) {
+                kill(last_sender_pid, SIGUSR2);
+            }
+
+            command_flag = 0;
         }
-        usleep(100000); 
+        usleep(50000);
     }
 
-    printf("[monitor] Monitor is shutting down...\n");
+    printf("[monitor] Shutting down.\n");
     return 0;
 }
