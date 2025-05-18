@@ -1,18 +1,23 @@
+#define _DEFAULT_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
 #include <signal.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <fcntl.h>
+#include <dirent.h>
 
 pid_t monitor_pid = -1;
 int monitor_stopping = 0;
 volatile sig_atomic_t response_ready = 0;
 
+
 void sigusr2_handler(int sig) {
-    (void)sig;
+  if(sig == SIGUSR2){
     response_ready = 1;
+  }
 }
 
 void start_monitor() {
@@ -53,8 +58,6 @@ void stop_monitor() {
     }else{
       printf("Monitor is not running.\n");
     }
-
-
 }
 
 
@@ -100,6 +103,7 @@ void send_command(const char *cmdline) {
     }
 }
 
+
 int main() {
     struct sigaction sa;
     sa.sa_handler = sigusr2_handler;
@@ -119,7 +123,7 @@ int main() {
 
         input[strcspn(input, "\n")] = '\0'; 
 
-        if (strcmp(input, "start_monitor") == 0) {
+           if (strcmp(input, "start_monitor") == 0) {
             start_monitor();
         } else if (strcmp(input, "stop_monitor") == 0) {
             stop_monitor();
@@ -130,6 +134,15 @@ int main() {
                 printf("Exiting.\n");
                 break;
             }
+		} else if (strncmp(input, "calculate_score" , 15) == 0) {
+	 
+    char *arg = strchr(input, ' ');
+    if (arg) {
+        arg++; 
+        send_command(input);
+    } else {
+        printf("Usage: calculate_score <hunt_id>\n");
+    }
         } else if (strlen(input) > 0) {
             send_command(input);
         }
@@ -140,4 +153,4 @@ int main() {
     }
 
     return 0;
-}
+} 

@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <dirent.h>
@@ -138,6 +139,49 @@ void view_treasure(const char *hunt_id, const char *treasure_id, FILE *out) {
 }
 
 
+void calculate_score(const char *hunt_id, FILE *out) {
+    if (!hunt_id) {
+        fprintf(out, "Missing hunt ID\n");
+        return;
+    }
+
+    int fd[2];
+    if (pipe(fd) == -1) {
+        fprintf(out, "Failed to create pipe\n");
+        return;
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        fprintf(out, "Failed to fork\n");
+        return;
+    }
+
+    if (pid == 0) {
+        close(fd[0]);             
+        dup2(fd[1], STDOUT_FILENO);
+        close(fd[1]);
+
+        execl("./score_calculator", "score_calculator", hunt_id, NULL);
+        perror("execl score_calculator");
+        exit(1);
+    } else {
+        close(fd[1]);           
+        char buffer[1024];
+        ssize_t n;
+
+        fprintf(out, "Scores for hunt '%s':\n", hunt_id);
+
+        while ((n = read(fd[0], buffer, sizeof(buffer)-1)) > 0) {
+            buffer[n] = '\0';
+            fprintf(out, "%s", buffer);
+        }
+
+        close(fd[0]);
+        waitpid(pid, NULL, 0);
+    }
+}
+
 
 void process_command(const char *cmdline) {
     char cmd_copy[512];
@@ -148,9 +192,16 @@ void process_command(const char *cmdline) {
     char *arg1 = strtok(NULL, " ");
     char *arg2 = strtok(NULL, " ");
 
-    FILE *fout = fopen("response.txt", "w");
+    int fd = open("response.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) {
+        perror("open response.txt");
+        return;
+    }
+
+    FILE *fout = fdopen(fd, "w");
     if (!fout) {
-        perror("fopen response.txt");
+        perror("fdopen");
+        close(fd);
         return;
     }
 
@@ -166,12 +217,20 @@ void process_command(const char *cmdline) {
         list_treasures(arg1, fout);
     } else if (strcmp(cmd, "view_treasure") == 0) {
         view_treasure(arg1, arg2, fout);
+    } else if (strcmp(cmd, "calculate_score") == 0) {
+        if (arg1) {
+            calculate_score(arg1, fout);
+        } else {
+            fprintf(fout, "Usage: calculate_score <hunt_id>\n");
+        }
     } else {
         fprintf(fout, "Unknown command: %s\n", cmd);
     }
 
     fclose(fout);
 }
+
+
 
 int main() {
     setup_signals();
